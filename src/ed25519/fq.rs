@@ -2,7 +2,7 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::PrimeField;
+use ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -45,6 +45,10 @@ const MODULUS_LIMBS_32: [u32; 8] = [
 /// Constant representing the modulus as static str
 const MODULUS_STR: &str = "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed";
 
+/// Obtained with:
+/// `sage: GF(57896044618658097711785492504343953926634992332820282019728792003956564819949).primitive_element()`
+const MULTIPLICATIVE_GENERATOR: Fq = Fq::from_raw([0x02, 0x0, 0x0, 0x0]);
+
 /// INV = -(p^{-1} mod 2^64) mod 2^64
 const INV: u64 = 0x86bca1af286bca1b;
 
@@ -83,7 +87,7 @@ const ROOT_OF_UNITY_INV: Fq = Fq::zero();
 use crate::{
     field_arithmetic, field_common, field_specific, impl_add_binop_specify_output,
     impl_binops_additive, impl_binops_additive_specify_output, impl_binops_multiplicative,
-    impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
+    impl_binops_multiplicative_mixed, impl_from_u64, impl_sub_binop_specify_output, impl_sum_prod,
 };
 impl_binops_additive!(Fq, Fq);
 impl_binops_multiplicative!(Fq, Fq);
@@ -101,6 +105,8 @@ field_common!(
     R3
 );
 field_arithmetic!(Fq, MODULUS, INV, dense);
+impl_sum_prod!(Fq);
+impl_from_u64!(Fq, R2);
 
 impl Fq {
     pub const fn size() -> usize {
@@ -201,8 +207,8 @@ impl ff::PrimeField for Fq {
     const CAPACITY: u32 = 255;
     const MODULUS: &'static str = MODULUS_STR;
     const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
-    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
-    const ROOT_OF_UNITY_INV: Self = ROOT_OF_UNITY_INV;
+    const ROOT_OF_UNITY: Self = todo!();
+    const ROOT_OF_UNITY_INV: Self = todo!();
     const TWO_INV: Self = TWO_INV;
     const DELTA: Self = DELTA;
     const S: u32 = 1;
@@ -216,7 +222,7 @@ impl ff::PrimeField for Fq {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
+        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -236,7 +242,7 @@ impl ff::PrimeField for Fq {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
-        let tmp = Fq::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
+        let tmp = Fq::montgomery_reduce_short(&self.0);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -250,14 +256,27 @@ impl ff::PrimeField for Fq {
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
+}
 
-    fn multiplicative_generator() -> Self {
-        unimplemented!();
+impl FromUniformBytes<64> for Fq {
+    /// Converts a 512-bit little endian integer into
+    /// an `Fq` by reducing by the modulus.
+    fn from_uniform_bytes(bytes: &[u8; 64]) -> Self {
+        Self::from_u512([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
+            u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+        ])
     }
+}
 
-    fn root_of_unity() -> Self {
-        unimplemented!();
-    }
+impl WithSmallOrderMulGroup<3> for Fq {
+    const ZETA: Self = todo!();
 }
 
 #[cfg(test)]

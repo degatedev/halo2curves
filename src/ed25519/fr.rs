@@ -2,14 +2,12 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
 
-use ff::PrimeField;
+use ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::arithmetic::{adc, mac, macx, sbb};
-
-use pasta_curves::arithmetic::{FieldExt, Group, SqrtRatio};
 
 /// This represents an element of $\mathbb{F}_q$ where
 ///
@@ -100,7 +98,7 @@ const ROOT_OF_UNITY_INV: Fr = Fr::zero();
 use crate::{
     field_arithmetic, field_common, field_specific, impl_add_binop_specify_output,
     impl_binops_additive, impl_binops_additive_specify_output, impl_binops_multiplicative,
-    impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
+    impl_binops_multiplicative_mixed, impl_from_u64, impl_sub_binop_specify_output, impl_sum_prod,
 };
 impl_binops_additive!(Fr, Fr);
 impl_binops_multiplicative!(Fr, Fr);
@@ -118,6 +116,8 @@ field_common!(
     R3
 );
 field_arithmetic!(Fr, MODULUS, INV, dense);
+impl_sum_prod!(Fr);
+impl_from_u64!(Fr, R2);
 
 impl Fr {
     pub const fn size() -> usize {
@@ -126,6 +126,9 @@ impl Fr {
 }
 
 impl ff::Field for Fr {
+    const ZERO: Self = Self::zero();
+    const ONE: Self = Self::one();
+
     fn random(mut rng: impl RngCore) -> Self {
         Self::from_u512([
             rng.next_u64(),
@@ -137,14 +140,6 @@ impl ff::Field for Fr {
             rng.next_u64(),
             rng.next_u64(),
         ])
-    }
-
-    fn zero() -> Self {
-        Self::zero()
-    }
-
-    fn one() -> Self {
-        Self::one()
     }
 
     fn double(&self) -> Self {
@@ -177,6 +172,10 @@ impl ff::Field for Fr {
         let sqrt = Self::conditional_select(&x1, &(x1 * SQRT_MINUS_ONE), choice2);
 
         CtOption::new(sqrt, choice1 | choice2)
+    }
+
+    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        ff::helpers::sqrt_ratio_generic(num, div)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -216,6 +215,12 @@ impl ff::PrimeField for Fr {
 
     const NUM_BITS: u32 = 256;
     const CAPACITY: u32 = 255;
+    const MODULUS: &'static str = MODULUS_STR;
+    const MULTIPLICATIVE_GENERATOR: Self = todo!();
+    const ROOT_OF_UNITY: Self = todo!();
+    const ROOT_OF_UNITY_INV: Self = ROOT_OF_UNITY_INV;
+    const TWO_INV: Self = TWO_INV;
+    const DELTA: Self = DELTA;
     const S: u32 = 6;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
@@ -227,7 +232,7 @@ impl ff::PrimeField for Fr {
         tmp.0[3] = u64::from_le_bytes(repr[24..32].try_into().unwrap());
 
         // Try to subtract the modulus
-        let (_, borrow) = tmp.0[0].overflowing_sub(MODULUS.0[0]);
+        let (_, borrow) = sbb(tmp.0[0], MODULUS.0[0], 0);
         let (_, borrow) = sbb(tmp.0[1], MODULUS.0[1], borrow);
         let (_, borrow) = sbb(tmp.0[2], MODULUS.0[2], borrow);
         let (_, borrow) = sbb(tmp.0[3], MODULUS.0[3], borrow);
@@ -247,7 +252,7 @@ impl ff::PrimeField for Fr {
     fn to_repr(&self) -> Self::Repr {
         // Turn into canonical form by computing
         // (a.R) / R = a
-        let tmp = Fr::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
+        let tmp = Fr::montgomery_reduce_short(&self.0);
 
         let mut res = [0; 32];
         res[0..8].copy_from_slice(&tmp.0[0].to_le_bytes());
@@ -261,23 +266,27 @@ impl ff::PrimeField for Fr {
     fn is_odd(&self) -> Choice {
         Choice::from(self.to_repr()[0] & 1)
     }
+}
 
-    fn multiplicative_generator() -> Self {
-        unimplemented!();
-    }
-
-    fn root_of_unity() -> Self {
-        unimplemented!();
+impl FromUniformBytes<64> for Fr {
+    /// Converts a 512-bit little endian integer into
+    /// an `Fq` by reducing by the modulus.
+    fn from_uniform_bytes(bytes: &[u8; 64]) -> Self {
+        Self::from_u512([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
+            u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
+            u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
+        ])
     }
 }
 
-impl SqrtRatio for Fr {
-    const T_MINUS1_OVER2: [u64; 4] = [0, 0, 0, 0];
-
-    fn get_lower_32(&self) -> u32 {
-        let tmp = Fr::montgomery_reduce_short(self.0[0], self.0[1], self.0[2], self.0[3]);
-        tmp.0[0] as u32
-    }
+impl WithSmallOrderMulGroup<3> for Fr {
+    const ZETA: Self = todo!();
 }
 
 #[cfg(test)]
