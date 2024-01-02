@@ -80,8 +80,11 @@ const SQRT_MINUS_ONE: Fq = Fq::from_raw([
     0x2b8324804fc1df0b,
 ]);
 
+/// TODO
 const ZETA: Fq = Fq::zero();
+/// TODO
 const DELTA: Fq = Fq::zero();
+/// TODO
 const ROOT_OF_UNITY_INV: Fq = Fq::zero();
 
 use crate::{
@@ -207,8 +210,10 @@ impl ff::PrimeField for Fq {
     const CAPACITY: u32 = 255;
     const MODULUS: &'static str = MODULUS_STR;
     const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
-    const ROOT_OF_UNITY: Self = todo!();
-    const ROOT_OF_UNITY_INV: Self = todo!();
+    /// TODO
+    const ROOT_OF_UNITY: Self = Self::one();
+    /// TODO
+    const ROOT_OF_UNITY_INV: Self = Self::zero();
     const TWO_INV: Self = TWO_INV;
     const DELTA: Self = DELTA;
     const S: u32 = 1;
@@ -276,7 +281,8 @@ impl FromUniformBytes<64> for Fq {
 }
 
 impl WithSmallOrderMulGroup<3> for Fq {
-    const ZETA: Self = todo!();
+    /// TODO
+    const ZETA: Self = ZETA;
 }
 
 #[cfg(test)]

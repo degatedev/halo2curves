@@ -216,8 +216,11 @@ impl ff::PrimeField for Fr {
     const NUM_BITS: u32 = 256;
     const CAPACITY: u32 = 255;
     const MODULUS: &'static str = MODULUS_STR;
-    const MULTIPLICATIVE_GENERATOR: Self = todo!();
-    const ROOT_OF_UNITY: Self = todo!();
+    /// TODO
+    const MULTIPLICATIVE_GENERATOR: Self = Self::one();
+    /// TODO
+    const ROOT_OF_UNITY: Self = Self::one();
+    /// TODO
     const ROOT_OF_UNITY_INV: Self = ROOT_OF_UNITY_INV;
     const TWO_INV: Self = TWO_INV;
     const DELTA: Self = DELTA;
@@ -286,7 +289,8 @@ impl FromUniformBytes<64> for Fr {
 }
 
 impl WithSmallOrderMulGroup<3> for Fr {
-    const ZETA: Self = todo!();
+    /// TODO
+    const ZETA: Self = ZETA;
 }
 
 #[cfg(test)]
