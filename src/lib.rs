@@ -7,6 +7,7 @@ pub mod multicore;
 pub mod serde;
 
 pub mod bn256;
+pub mod ed25519;
 pub mod grumpkin;
 pub mod pasta;
 pub mod pluto_eris;
