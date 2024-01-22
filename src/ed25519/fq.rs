@@ -1,11 +1,12 @@
 use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, Neg, Sub};
-
 use ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup};
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+
+#[cfg(feature = "derive_serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::arithmetic::{adc, mac, macx, sbb};
 
@@ -17,7 +18,8 @@ use crate::arithmetic::{adc, mac, macx, sbb};
 // The internal representation of this type is four 64-bit unsigned
 // integers in little-endian order. `Fq` values are always in
 // Montgomery form; i.e., Fq(a) = aR mod q, with R = 2^256.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "derive_serde", derive(Serialize, Deserialize))]
 pub struct Fq(pub(crate) [u64; 4]);
 
 /// Constant representing the modulus
@@ -45,11 +47,11 @@ const MODULUS_LIMBS_32: [u32; 8] = [
 /// Constant representing the modulus as static str
 const MODULUS_STR: &str = "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed";
 
-/// Obtained with:
-/// `sage: GF(57896044618658097711785492504343953926634992332820282019728792003956564819949).primitive_element()`
+/// Obtained with sage:
+/// `GF(q).primitive_element()`
 const MULTIPLICATIVE_GENERATOR: Fq = Fq::from_raw([0x02, 0x0, 0x0, 0x0]);
 
-/// INV = -(p^{-1} mod 2^64) mod 2^64
+/// INV = -(q^{-1} mod 2^64) mod 2^64
 const INV: u64 = 0x86bca1af286bca1b;
 
 /// R = 2^256 mod q
@@ -72,7 +74,7 @@ const TWO_INV: Fq = Fq::from_raw([
     0x3fffffffffffffff,
 ]);
 
-/// sqrt(-1) mod q = 2^((p - 1) / 4) mod q
+/// sqrt(-1) mod q = 2^((q - 1) / 4) mod q
 const SQRT_MINUS_ONE: Fq = Fq::from_raw([
     0xc4ee1b274a0ea0b0,
     0x2f431806ad2fe478,
@@ -80,12 +82,37 @@ const SQRT_MINUS_ONE: Fq = Fq::from_raw([
     0x2b8324804fc1df0b,
 ]);
 
-/// TODO
-const ZETA: Fq = Fq::zero();
-/// TODO
-const DELTA: Fq = Fq::zero();
-/// TODO
-const ROOT_OF_UNITY_INV: Fq = Fq::zero();
+// Element in small order subgroup (3-order)
+// Sage:
+// `GF(q).primitive_element() ** ((q - 1) // N)` where N = 3
+const ZETA: Fq = Fq::from_raw([
+    0xaa86d89d8618e538,
+    0x1a1aada8413a4550,
+    0xd9872fccc55bd529,
+    0x381cba36aa6565b5,
+]);
+// The `2^s` root of unity.
+// It can be calculated by exponentiating `MULTIPLICATIVE_GENERATOR` by `t`,
+// where `2^s * t = q - 1` with `t` odd.
+// Sage:
+// `GF(q).primitive_element() ** t`
+const ROOT_OF_UNITY: Fq = Fq::from_raw([
+    0xc4ee1b274a0ea0b0,
+    0x2f431806ad2fe478,
+    0x2b4d00993dfbd7a7,
+    0x2b8324804fc1df0b,
+]);
+// Inverse of `ROOT_OF_UNITY`
+const ROOT_OF_UNITY_INV: Fq = Fq::from_raw([
+    0x3b11e4d8b5f15f3d,
+    0xd0bce7f952d01b87,
+    0xd4b2ff66c2042858,
+    0x547cdb7fb03e20f4,
+]);
+// Generator of the `t-order` multiplicative subgroup
+// Sage:
+// `GF(q).primitive_element() ** (2**s)`
+const DELTA: Fq = Fq::from_raw([0x10, 0, 0, 0]);
 
 use crate::{
     field_arithmetic, field_common, field_specific, impl_add_binop_specify_output,
@@ -151,14 +178,14 @@ impl ff::Field for Fq {
         //      = a^((q + 3) / 8) * (2^((q - 1) / 4))
         //        OR
         //        Doesn't exist
-        let x1 = self.pow(&[
+        let x1 = self.pow([
             0xfffffffffffffffe,
             0xffffffffffffffff,
             0xffffffffffffffff,
             0x0fffffffffffffff,
         ]);
 
-        let choice1 = x1.square().ct_eq(&self);
+        let choice1 = x1.square().ct_eq(self);
         let choice2 = x1.square().ct_eq(&-self);
 
         let sqrt = Self::conditional_select(&x1, &(x1 * SQRT_MINUS_ONE), choice2);
@@ -206,17 +233,16 @@ impl ff::Field for Fq {
 impl ff::PrimeField for Fq {
     type Repr = [u8; 32];
 
+    const MODULUS: &'static str = MODULUS_STR;
     const NUM_BITS: u32 = 256;
     const CAPACITY: u32 = 255;
-    const MODULUS: &'static str = MODULUS_STR;
-    const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
-    /// TODO
-    const ROOT_OF_UNITY: Self = Self::one();
-    /// TODO
-    const ROOT_OF_UNITY_INV: Self = Self::zero();
     const TWO_INV: Self = TWO_INV;
+    const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
+    // An integer `s` satisfying the equation `2^s * t = modulus - 1` with `t` odd.
+    const S: u32 = 2;
+    const ROOT_OF_UNITY: Self = ROOT_OF_UNITY;
+    const ROOT_OF_UNITY_INV: Self = ROOT_OF_UNITY_INV;
     const DELTA: Self = DELTA;
-    const S: u32 = 1;
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
         let mut tmp = Fq([0, 0, 0, 0]);
@@ -281,7 +307,6 @@ impl FromUniformBytes<64> for Fq {
 }
 
 impl WithSmallOrderMulGroup<3> for Fq {
-    /// TODO
     const ZETA: Self = ZETA;
 }
 

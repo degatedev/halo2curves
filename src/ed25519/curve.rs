@@ -6,11 +6,13 @@ use core::fmt::Debug;
 use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::{BatchInverter, Field, PrimeField};
-use group::{self, Curve, Group};
+use group::{self, Curve};
 use group::{prime::PrimeCurveAffine, GroupEncoding};
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+
+#[cfg(feature = "derive_serde")]
+use serde::{Deserialize, Serialize};
 
 const ED25519_GENERATOR_X: Fq = Fq::from_raw([
     0xc956_2d60_8f25_d51a,
@@ -43,7 +45,8 @@ use crate::{
     impl_binops_multiplicative, impl_binops_multiplicative_mixed, impl_sub_binop_specify_output,
 };
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(Serialize, Deserialize))]
 pub struct Ed25519 {
     pub x: Fq,
     pub y: Fq,
@@ -51,13 +54,14 @@ pub struct Ed25519 {
     pub t: Fq,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "derive_serde", derive(Serialize, Deserialize))]
 pub struct Ed25519Affine {
     pub x: Fq,
     pub y: Fq,
 }
 
-#[derive(Copy, Clone, Hash)]
+#[derive(Copy, Clone, Hash, Default)]
 pub struct Ed25519Compressed([u8; 32]);
 
 impl Ed25519 {
@@ -103,7 +107,7 @@ impl Ed25519 {
             .skip(3)
         {
             acc = acc.double();
-            acc += Ed25519::conditional_select(&zero, &self, bit);
+            acc += Ed25519::conditional_select(&zero, self, bit);
         }
 
         acc
@@ -152,12 +156,6 @@ impl Ed25519 {
             z: f * g,
             t: e * h,
         }
-    }
-}
-
-impl Ed25519 {
-    fn endomorphism_base(&self) -> Self {
-        unimplemented!();
     }
 }
 
@@ -287,12 +285,6 @@ impl std::fmt::Debug for Ed25519Compressed {
     }
 }
 
-impl Default for Ed25519Compressed {
-    fn default() -> Self {
-        Ed25519Compressed([0; 32])
-    }
-}
-
 impl AsRef<[u8]> for Ed25519Compressed {
     fn as_ref(&self) -> &[u8] {
         &self.0
@@ -357,8 +349,13 @@ impl CurveExt for Ed25519 {
 
     const CURVE_ID: &'static str = "ed25519";
 
+    fn is_on_curve(&self) -> Choice {
+        let affine = Ed25519Affine::from(*self);
+        !self.z.is_zero() & affine.is_on_curve() & (affine.x * affine.y * self.z).ct_eq(&self.t)
+    }
+
     fn endo(&self) -> Self {
-        self.endomorphism_base()
+        unimplemented!();
     }
 
     fn jacobian_coordinates(&self) -> (Fq, Fq, Fq) {
@@ -369,20 +366,12 @@ impl CurveExt for Ed25519 {
         unimplemented!();
     }
 
-    fn is_on_curve(&self) -> Choice {
-        let affine = Ed25519Affine::from(*self);
-
-        println!("affine: {:?}", affine);
-
-        !self.z.is_zero() & affine.is_on_curve() & (affine.x * affine.y * self.z).ct_eq(&self.t)
-    }
-
     fn a() -> Self::Base {
         unimplemented!()
     }
 
     fn b() -> Self::Base {
-        ED25519_D
+        unimplemented!()
     }
 
     fn new_jacobian(_x: Self::Base, _y: Self::Base, _z: Self::Base) -> CtOption<Self> {
@@ -408,8 +397,8 @@ impl group::Curve for Ed25519 {
             let tmp = q.x;
 
             // Set the coordinates to the correct value
-            q.x = p.x * &tmp; // Multiply by 1/z
-            q.y = p.y * &tmp; // Multiply by 1/z
+            q.x = p.x * tmp; // Multiply by 1/z
+            q.y = p.y * tmp; // Multiply by 1/z
         }
     }
 
@@ -482,7 +471,7 @@ impl crate::serde::SerdeObject for Ed25519 {
         x.zip(y).zip(z).zip(t).and_then(|(((x, y), z), t)| {
             let res = Self { x, y, z, t };
             // Check that the point is on the curve.
-            bool::from(res.is_on_curve()).then(|| res)
+            bool::from(res.is_on_curve()).then_some(res)
         })
     }
     fn to_raw_bytes(&self) -> Vec<u8> {
@@ -601,7 +590,7 @@ impl crate::serde::SerdeObject for Ed25519Affine {
         x.zip(y).and_then(|(x, y)| {
             let res = Self { x, y };
             // Check that the point is on the curve.
-            bool::from(res.is_on_curve()).then(|| res)
+            bool::from(res.is_on_curve()).then_some(res)
         })
     }
     fn to_raw_bytes(&self) -> Vec<u8> {
@@ -697,7 +686,7 @@ impl CurveAffine for Ed25519Affine {
     }
 
     fn b() -> Self::Base {
-        ED25519_D
+        unimplemented!()
     }
 }
 
@@ -913,6 +902,36 @@ impl<'a, 'b> Mul<&'b Fr> for &'a Ed25519Affine {
 impl CurveAffineExt for Ed25519Affine {
     fn into_coordinates(self) -> (Self::Base, Self::Base) {
         (self.x, self.y)
+    }
+}
+
+pub trait TwistedEdwardsCurveExt: CurveExt {
+    fn a() -> <Self as CurveExt>::Base;
+    fn d() -> <Self as CurveExt>::Base;
+}
+
+impl TwistedEdwardsCurveExt for Ed25519 {
+    fn a() -> Fq {
+        -Fq::ONE
+    }
+
+    fn d() -> Fq {
+        ED25519_D
+    }
+}
+
+pub trait TwistedEdwardsCurveAffineExt: CurveAffineExt {
+    fn a() -> <Self as CurveAffine>::Base;
+    fn d() -> <Self as CurveAffine>::Base;
+}
+
+impl TwistedEdwardsCurveAffineExt for Ed25519Affine {
+    fn a() -> Fq {
+        -Fq::ONE
+    }
+
+    fn d() -> Fq {
+        ED25519_D
     }
 }
 
