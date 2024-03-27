@@ -21,12 +21,12 @@
 // #[macro_use]
 // mod util;
 
-mod scalar;
+pub mod scalar;
 
 pub use fp::Fp as Fq;
 pub use scalar::Scalar as Fr;
 
-use scalar::Scalar;
+pub use scalar::Scalar;
 
 mod fp;
 mod fp2;
