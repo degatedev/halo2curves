@@ -254,6 +254,7 @@ impl ff::Field for Fr {
     }
 }
 
+
 impl ff::PrimeField for Fr {
     type Repr = [u8; 32];
 
@@ -328,6 +329,28 @@ impl FromUniformBytes<64> for Fr {
 
 impl WithSmallOrderMulGroup<3> for Fr {
     const ZETA: Self = ZETA;
+}
+
+#[cfg(feature = "gpu")]
+impl ec_gpu::GpuName for Fr {
+    fn name() -> String {
+        "Bn256_Fr".to_owned()
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl ec_gpu::GpuField for Fr {
+    fn one() -> Vec<u32> {
+        crate::u64_to_u32(&R.0[..])
+    }
+
+    fn r2() -> Vec<u32> {
+        crate::u64_to_u32(&R2.0[..])
+    }
+
+    fn modulus() -> Vec<u32> {
+        crate::u64_to_u32(&MODULUS.0[..])
+    }
 }
 
 #[cfg(test)]

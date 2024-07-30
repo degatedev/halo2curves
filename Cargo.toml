@@ -39,9 +39,12 @@ blake2b_simd = "1"
 maybe-rayon = { version = "0.1.0", default-features = false }
 digest = "0.10.7"
 sha2 = "0.10.8"
+ec-gpu-gen = { git = "https://github.com/lanbones/ec-gpu", branch = "halo2-opt-v2", optional = true }
+ec-gpu = { git = "https://github.com/lanbones/ec-gpu", optional = true }
+
 
 [features]
-default = ["bits", "multicore", "bn256-table", "derive_serde"]
+default = ["bits", "multicore", "bn256-table", "derive_serde", "gpu"]
 multicore = ["maybe-rayon/threads"]
 asm = []
 bits = ["ff/bits"]
@@ -49,6 +52,7 @@ bn256-table = []
 derive_serde = ["serde/derive", "serde_arrays", "hex"]
 prefetch = []
 print-trace = ["ark-std/print-trace"]
+gpu = ["ec-gpu"]
 
 [profile.bench]
 opt-level = 3
