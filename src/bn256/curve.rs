@@ -63,6 +63,13 @@ impl ec_gpu::GpuName for G1Affine {
     }
 }
 
+#[cfg(feature = "gpu")]
+impl ec_gpu::GpuName for G1 {
+    fn name() -> String {
+        "Bn256_G1Affine".to_owned()
+    }
+}
+
 const G1_GENERATOR_X: Fq = Fq::one();
 const G1_GENERATOR_Y: Fq = Fq::from_raw([2, 0, 0, 0]);
 const G1_A: Fq = Fq::from_raw([0, 0, 0, 0]);
